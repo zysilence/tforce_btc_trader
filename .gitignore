@@ -5,3 +5,5 @@ saves/
 plt/
 logs_async/
 config.json
+data/populate/bitcoin-historical-data
+data/populate/bitcoin-historical-data.zip
