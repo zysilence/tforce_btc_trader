@@ -155,8 +155,10 @@ class BitcoinEnv(Environment):
         for table in tables_:
             for col in table['cols']:
                 name_col = f'{table["name"]}_{col}'
+                # [sfan] close price is percentage change of adjacent timestep
                 if name_col == data.target:
                     columns.append(self.diff(df[name_col], True))
+                # [sfan] other prices are normalized by close price of the same timestep
                 elif col in table['price_cols']:
                     columns.append(df[name_col]/df[data.target])
                 else:
