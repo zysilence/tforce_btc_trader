@@ -302,6 +302,7 @@ class BitcoinEnv(Environment):
         # In testing/live, we'll just block the trade if they can't afford it
         if act_pct > 0:
             if step_acc.cash < self.min_trade:
+                # [sfan] why?
                 act_btc = -(self.start_cash + self.start_value)
             elif act_btc < self.min_trade:
                 act_btc = 0
@@ -311,6 +312,7 @@ class BitcoinEnv(Environment):
 
         elif act_pct < 0:
             if step_acc.value < self.min_trade:
+                # [sfan] why?
                 act_btc = -(self.start_cash + self.start_value)
             elif abs(act_btc) < self.min_trade:
                 act_btc = 0
