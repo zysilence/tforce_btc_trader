@@ -61,7 +61,7 @@ class Data(object):
 
         df = None
         for table, filename in filenames.items():
-            df_ = pd.read_csv(path.join(path.dirname(__file__), 'bitcoin-historical-data', filename))
+            df_ = pd.read_csv(path.join(path.dirname(__file__), 'populate', 'bitcoin-historical-data', filename))
             col_renames_ = {k: f"{table}_{v}" for k, v in col_renames.items()}
             df_ = df_.rename(columns=col_renames_)
             ts = f"{table}_timestamp"
