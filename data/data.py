@@ -96,6 +96,7 @@ class Data(object):
         )
         df[self.target] = target
 
+        # [sfan] 'cash' and 'value' features are filled in every timestep with default value 0
         df['cash'], df['value'] = 0., 0.
 
         self.df = df
@@ -122,6 +123,7 @@ class Data(object):
         self.df['value'] = 0.
 
     def set_cash_val(self, ep, step, cash, value):
+        # [sfan] just set the values at the start of the time window;
         offset = self.offset(ep, step)
         self.df.cash.iloc[offset] = cash
         self.df.value.iloc[offset] = value
