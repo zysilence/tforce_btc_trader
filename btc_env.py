@@ -44,7 +44,7 @@ class BitcoinEnv(Environment):
         # cash/val start @ about $3.5k each. You should increase/decrease depending on how much you'll put into your
         # exchange accounts to trade with. Presumably the agent will learn to work with what you've got (cash/value
         # are state inputs); but starting capital does effect the learning process.
-        self.start_cash, self.start_value = 5., 5.  # .4, .4
+        self.start_cash, self.start_value = 1, 0  # .4, .4
 
         # We have these "accumulator" objects, which collect values over steps, over episodes, etc. Easier to keep
         # same-named variables separate this way.
@@ -63,10 +63,14 @@ class BitcoinEnv(Environment):
         self.min_trade = {Exchange.GDAX: .01, Exchange.KRAKEN: .002}[EXCHANGE]
         self.update_btc_price()
 
+        # [sfan] stop loss value
+        self.stop_loss = self.start_cash * 0.8
+
         # Action space
         # see {last_good_commit_ for action_types other than 'single_discrete'
         # In single_discrete, we allow buy2%, sell2%, hold (and nothing else)
-        self.actions_ = dict(type='int', shape=(), num_actions=3)
+        # [sfan] 0: short position; 1: hold a position
+        self.actions_ = dict(type='int', shape=(), num_actions=2)
 
         # Observation space
         # width = step-window (150 time-steps)
@@ -121,8 +125,8 @@ class BitcoinEnv(Environment):
         elif self.mode == Mode.TRAIN:
             acc.ep.i += 1
 
-        self.data.reset_cash_val()
-        self.data.set_cash_val(acc.ep.i, acc.step.i, 0., 0.)
+        # self.data.reset_cash_val()
+        # self.data.set_cash_val(acc.ep.i, acc.step.i, 0., 0.)
         return self.get_next_state()
 
     def execute(self, action):
@@ -131,11 +135,11 @@ class BitcoinEnv(Environment):
         h = self.hypers
 
         act_pct = {
-            0: -.02,
-            1: 0,
-            2: .02
+            0: 0,
+            1: .05,
         }[action]
-        act_btc = act_pct * (acc.step.cash if act_pct > 0 else acc.step.value)
+        # act_btc = act_pct * (acc.step.cash if act_pct > 0 else acc.step.value)
+        act_btc = act_pct * self.start_cash
 
         fee = {
             Exchange.GDAX: 0.0025,  # https://support.gdax.com/customer/en/portal/articles/2425097-what-are-the-fees-on-gdax-
@@ -144,14 +148,12 @@ class BitcoinEnv(Environment):
 
         # Perform the trade. In training mode, we'll let it dip into negative here, but then kill and punish below.
         # In testing/live, we'll just block the trade if they can't afford it
-        if act_pct > 0:
-            if acc.step.cash < self.min_trade:
-                act_btc = -(self.start_cash + self.start_value)
-            elif act_btc < self.min_trade:
-                act_btc = 0
-            else:
-                acc.step.value += act_btc - act_btc*fee
+        if act_pct > 0 and acc.step.value == 0 and acc.step.cash >= self.stop_loss:
+            acc.step.value += act_btc - act_btc*fee
             acc.step.cash -= act_btc
+        if act_pct == 0 and acc.step.value > 0:
+            acc.step.cash += acc.step.value - acc.step.value * fee
+            acc.step.value = 0
 
         elif act_pct < 0:
             if acc.step.value < self.min_trade:
@@ -179,26 +181,25 @@ class BitcoinEnv(Environment):
         acc.step.hold_value += pct_change * hold_before
         totals.hold.append(acc.step.hold_value + self.start_cash)
 
-        reward = 0
-
         acc.step.i += 1
 
+        """
         self.data.set_cash_val(
             acc.ep.i, acc.step.i,
             acc.step.cash/self.start_cash,
             acc.step.value/self.start_value
         )
+        """
         next_state = self.get_next_state()
 
-        terminal = int(acc.step.i + 1 >= self.EPISODE_LEN)
-        if acc.step.value < 0 or acc.step.cash < 0:
+        reward = self.get_return()
+
+        terminal = False
+        if total_now < self.stop_loss or acc.step.i + 1 >= self.EPISODE_LEN:
             terminal = True
         if terminal and self.mode in (Mode.TRAIN, Mode.TEST):
             # We're done.
             acc.step.signals.append(0)  # Add one last signal (to match length)
-            reward = self.get_return()
-            if np.unique(acc.step.signals).shape[0] == 1:
-                reward = -(self.start_cash + self.start_value)  # slam if you don't do anything
 
         if terminal and self.mode in (Mode.LIVE, Mode.TEST_LIVE):
             raise_refactor()
@@ -209,9 +210,12 @@ class BitcoinEnv(Environment):
     def get_return(self, adv=True):
         acc = self.acc[self.mode.value]
         totals = acc.step.totals
-        trade = (totals.trade[-1] / totals.trade[0] - 1)
-        hold = (totals.hold[-1] / totals.hold[0] - 1)
-        return trade - hold if adv else trade
+        if len(totals.trade) > 1:
+            trade = (totals.trade[-1] / totals.trade[-2])
+        else:
+            trade = totals.trade[-1] / (self.start_cash + self.start_value)
+
+        return trade
 
     def episode_finished(self, runner):
         if self.mode == Mode.TRAIN: return True
@@ -222,19 +226,19 @@ class BitcoinEnv(Environment):
         n_uniques = np.unique(signals).shape[0]
         ret = self.get_return()
         hold_ret = totals.hold[-1] / totals.hold[0] - 1
+        total_return = totals.trade[-1] / totals.trade[0] - 1
 
         acc.ep.returns.append(float(ret))
         acc.ep.uniques.append(n_uniques)
 
         # Print (limit to note-worthy)
-        lt_0 = (signals < 0).sum()
         eq_0 = (signals == 0).sum()
         gt_0 = (signals > 0).sum()
         completion = int(acc.ep.i * self.data.ep_stride / self.data.df.shape[0] * 100)
         steps = f"\tSteps: {acc.step.i}"
 
         fm = '%.3f'
-        print(f"{completion}%{steps}\tTrade: {fm%ret}\tHold: {fm%hold_ret}\tTrades:\t{lt_0}[<0]\t{eq_0}[=0]\t{gt_0}[>0]")
+        print(f"{completion}%{steps}\tTrade: {fm%total_return}\tHold: {fm%hold_ret}\tTrades:\t{eq_0}[=0]\t{gt_0}[>0]")
         return True
 
     def run_deterministic(self, runner, print_results=True):

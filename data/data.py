@@ -69,17 +69,38 @@ class Data(object):
             df_ = df_.set_index(ts)
             df = df_ if df is None else df.join(df_)
 
-        # too quiet before 2015, time waste. copy() to avoid pandas errors
-        df = df.loc['2015':].copy()
+            # [sfan] Select features
+            features = config_json['DATA']['features']
+            columns = [f"{table}_{feature}" for feature in features]
+            df = df[columns]
 
+        # too quiet before 2015, time waste. copy() to avoid pandas errors
+        # [sfan] start year is read from the config file
+        # df = df.loc['2015':].copy()
+        start_year = config_json['DATA']['start_year']
+        df = df.loc[start_year:].copy()
+
+        # [sfan] fill nan
+        df = df.replace([np.inf, -np.inf], np.nan).ffill()  # .bfill()?
+        # [sfan] Use scale or not?
+        """
+        df = pd.DataFrame(
+            robust_scale(df.values, quantile_range=(.1, 100-.1)),
+            columns=df.columns, index=df.index
+        )
+        """
+
+        """
         df['month'] = df.index.month
         df['day'] = df.index.day
         df['hour'] = df.index.hour
+        """
 
         # TODO drop null rows? (inner join?)
         # TODO arbitrage
         # TODO indicators
 
+        """
         diff_cols = [
             f"{table}_{k}" for k in
             'open high low close volume_btc volume vwap'.split(' ')
@@ -98,6 +119,7 @@ class Data(object):
 
         # [sfan] 'cash' and 'value' features are filled in every timestep with default value 0
         df['cash'], df['value'] = 0., 0.
+        """
 
         self.df = df
 
@@ -112,6 +134,10 @@ class Data(object):
         offset = self.offset(ep, step)
         X = self.df.iloc[offset:offset+self.window]
         y = self.df.iloc[offset+self.window]
+        # [sfan] normalized by close price of the last timestep in the window
+        base = X.iloc[-1]['coinbase_close']
+        X = X / base
+        y = y / base
         return X, y
 
     def get_prices(self, ep, step):
