@@ -172,7 +172,7 @@ class BitcoinEnv(Environment):
         _, y = self.data.get_data(acc.ep.i, acc.step.i)  # TODO verify
         pct_change = y[self.data.target]
 
-        acc.step.value += pct_change * acc.step.value
+        acc.step.value = pct_change * acc.step.value
         total_now = acc.step.value + acc.step.cash
         totals.trade.append(total_now)
 
@@ -211,9 +211,10 @@ class BitcoinEnv(Environment):
         acc = self.acc[self.mode.value]
         totals = acc.step.totals
         if len(totals.trade) > 1:
-            trade = (totals.trade[-1] / totals.trade[-2])
+            trade = (totals.trade[-1] / totals.trade[-2]) - 1
         else:
-            trade = totals.trade[-1] / (self.start_cash + self.start_value)
+            trade = totals.trade[-1] / (self.start_cash + self.start_value) - 1
+        trade = trade * 1e4
 
         return trade
 
@@ -224,11 +225,11 @@ class BitcoinEnv(Environment):
         totals = acc.step.totals
         signals = np.array(acc.step.signals)
         n_uniques = np.unique(signals).shape[0]
-        ret = self.get_return()
+        # ret = self.get_return()
         hold_ret = totals.hold[-1] / totals.hold[0] - 1
         total_return = totals.trade[-1] / totals.trade[0] - 1
 
-        acc.ep.returns.append(float(ret))
+        acc.ep.returns.append(float(total_return))
         acc.ep.uniques.append(n_uniques)
 
         # Print (limit to note-worthy)
@@ -237,7 +238,7 @@ class BitcoinEnv(Environment):
         completion = int(acc.ep.i * self.data.ep_stride / self.data.df.shape[0] * 100)
         steps = f"\tSteps: {acc.step.i}"
 
-        fm = '%.3f'
+        fm = '%.4f'
         print(f"{completion}%{steps}\tTrade: {fm%total_return}\tHold: {fm%hold_ret}\tTrades:\t{eq_0}[=0]\t{gt_0}[>0]")
         return True
 

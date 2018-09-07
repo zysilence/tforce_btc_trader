@@ -1,4 +1,7 @@
 # 需要改进的地方
+## data
+* episode start: 随机产生
+
 ## State
 * 只使用OCHL，不使用cash/value
 * 用收盘价归一化
